@@ -43,6 +43,7 @@ $sortedMatches = array_merge($liveMatches, $upcomingMatches);
     <?php echo generate_meta_tags(); ?>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="<?php echo asset('style.css'); ?>">
 </head>
 <body>
@@ -61,6 +62,30 @@ $sortedMatches = array_merge($liveMatches, $upcomingMatches);
     </header>
 
     <main>
+
+        <!-- ===== UCL FINAL BANNER ===== -->
+        <div class="container">
+            <a href="/ucl-final/" class="ucl-promo-banner">
+                <img src="/uploads/final-b.png" alt="Финал Лиги чемпионов 2026 ПСЖ - Арсенал" class="ucl-promo-img">
+                <div class="ucl-promo-overlay"></div>
+                <div class="ucl-promo-content">
+                    <span class="ucl-promo-badge">Финал Лиги чемпионов</span>
+                    <span class="ucl-promo-title">ПСЖ — Арсенал</span>
+                    <span class="ucl-promo-meta">30 мая, 19:00 МСК</span>
+                </div>
+            </a>
+        </div>
+        <style>
+        .ucl-promo-banner{display:block;position:relative;border-radius:16px;overflow:hidden;margin:24px auto;max-width:1200px;aspect-ratio:21/9;text-decoration:none}
+        .ucl-promo-img{width:100%;height:100%;object-fit:cover;transition:transform 0.4s}
+        .ucl-promo-banner:hover .ucl-promo-img{transform:scale(1.03)}
+        .ucl-promo-overlay{position:absolute;inset:0;background:linear-gradient(90deg,rgba(10,15,30,0.85) 0%,rgba(10,15,30,0.4) 50%,transparent 100%)}
+        .ucl-promo-content{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;padding:clamp(20px,5vw,48px);gap:8px}
+        .ucl-promo-badge{display:inline-flex;width:fit-content;background:linear-gradient(90deg,#c9a227,#e8c547);color:#0a0f1e;padding:6px 14px;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase}
+        .ucl-promo-title{font-family:'Oswald',system-ui,sans-serif;font-size:clamp(1.5rem,4vw,2.8rem);font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:1px}
+        .ucl-promo-meta{font-size:clamp(12px,2vw,15px);color:rgba(255,255,255,0.7)}
+        @media(max-width:600px){.ucl-promo-banner{aspect-ratio:16/9;margin:16px}}
+        </style>
 
         <!-- ===== BANNERS ===== -->
         <?php if (!empty($banners)): ?>
@@ -192,9 +217,6 @@ $sortedMatches = array_merge($liveMatches, $upcomingMatches);
             <p>&copy; <?php echo date('Y'); ?> SPORTIFY. Все права защищены.</p>
         </div>
     </footer>
-
- 
-    </script>
 
 </body>
 </html>
