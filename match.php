@@ -1,8 +1,4 @@
 <?php
-/**
- * Страница матча / трансляции
- */
-
 define('APP_ACCESS', true);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/includes/Database.php';
@@ -21,21 +17,13 @@ $stmt->execute([$matchId]);
 $match = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$match) { header('Location: /'); exit; }
 
-// Получаем связанное событие трансляции
 $streamEvent = null;
 $hlsUrl = null;
 $hlsTokenUrl = null;
 try {
-    $streamStmt = $db->prepare("
-        SELECT * FROM streaming_events 
-        WHERE match_id = ? 
-        ORDER BY created_at DESC 
-        LIMIT 1
-    ");
+    $streamStmt = $db->prepare("SELECT * FROM streaming_events WHERE match_id = ? ORDER BY created_at DESC LIMIT 1");
     $streamStmt->execute([$matchId]);
     $streamEvent = $streamStmt->fetch(PDO::FETCH_ASSOC);
-    
-    // Если есть событие трансляции - используем прямой HLS URL
     if ($streamEvent) {
         $hlsTokenUrl = $streamEvent['hls_url'];
     }
@@ -57,18 +45,16 @@ $isLive          = $now >= $startTs && !$isFinished;
 $isUpcoming      = $now < $startTs;
 $broadcastReady  = $now >= $broadcastStartTs;
 $noDrawVote      = !empty($match['no_draw_vote']);
-$matchStarted    = $now >= $startTs; // голосование закрыто
+$matchStarted    = $now >= $startTs;
 
 $parts = explode(' - ', $match['title'], 2);
 $team1 = trim($parts[0] ?? 'Команда 1');
 $team2 = trim($parts[1] ?? 'Команда 2');
 
-// Другие матчи
 $otherStmt = $db->prepare("SELECT * FROM matches WHERE id != ? AND auto_close_time > NOW() ORDER BY start_time ASC LIMIT 3");
 $otherStmt->execute([$matchId]);
 $otherMatches = $otherStmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Текущий URL для кнопки «Поделиться»
 $shareUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http')
     . '://' . ($_SERVER['HTTP_HOST'] ?? '') . '/match.php?id=' . $matchId;
 ?>
@@ -80,7 +66,7 @@ $shareUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="<?php echo asset('style.css'); ?>">
     
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
 </head>
 <body>
 
@@ -222,106 +208,122 @@ $shareUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 
                             </div>
 
                         <?php elseif ($hlsTokenUrl): ?>
-                            <div class="player-container">
+                            <div class="player-container" id="playerWrapper">
                                 <video 
                                     id="player-hls" 
                                     playsinline 
-                                    controls 
                                     preload="auto"
                                     <?php if (!empty($match['cover_image'])): ?>
                                     poster="/<?php echo htmlspecialchars($match['cover_image']); ?>"
                                     <?php endif; ?>
                                     style="width:100%;height:100%;background:#000;">
-                                    Your browser does not support HLS playback.
                                 </video>
+                                <div class="player-loader" id="playerLoader" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);z-index:10;">
+                                    <div style="width:44px;height:44px;border:3px solid rgba(255,255,255,0.15);border-top-color:#fff;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+                                    <p id="playerStatusText" style="color:rgba(255,255,255,0.7);font-size:13px;margin-top:14px;">Подключение...</p>
+                                </div>
+                                <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
                                 <script>
-                                    (function() {
-                                        const video = document.getElementById('player-hls');
-                                        const hlsUrl = <?php echo json_encode($hlsTokenUrl); ?>;
-                                        
-                                        function initializeHLS() {
-                                            if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                                                video.src = hlsUrl;
-                                                video.addEventListener('loadedmetadata', function() {
-                                                    video.play().catch(e => {
-                                                        console.log('Autoplay prevented');
-                                                    });
-                                                });
-                                                return;
-                                            }
+                                (function(){
+                                    var video = document.getElementById('player-hls');
+                                    var loader = document.getElementById('playerLoader');
+                                    var statusText = document.getElementById('playerStatusText');
+                                    var hlsUrl = <?php echo json_encode($hlsTokenUrl); ?>;
+                                    var hls = null;
+                                    var retryCount = 0;
+                                    var maxRetries = 5;
 
-                                            if (window.Hls) {
-                                                setupHlsJs();
-                                                return;
-                                            }
+                                    function showStatus(msg) { if (statusText) statusText.textContent = msg; }
+                                    function hideLoader() { if (loader) loader.style.display = 'none'; video.controls = true; }
+                                    function showLoader() { if (loader) loader.style.display = 'flex'; }
 
-                                            const script = document.createElement('script');
-                                            script.src = 'https://cdn.jsdelivr.net/npm/hls.js@1.5.8/dist/hls.min.js';
-                                            script.async = true;
-                                            script.onload = setupHlsJs;
-                                            script.onerror = function() {
-                                                console.error('Failed to load HLS.js');
-                                                video.style.opacity = '0.5';
-                                            };
-                                            document.head.appendChild(script);
+                                    function initPlayer() {
+                                        if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                                            video.src = hlsUrl;
+                                            video.addEventListener('loadeddata', function() { hideLoader(); video.play().catch(function(){}); }, {once:true});
+                                            video.addEventListener('error', handleError);
+                                            return;
                                         }
 
-                                        function setupHlsJs() {
-                                            if (!window.Hls || !Hls.isSupported()) {
-                                                console.error('HLS not supported');
-                                                return;
-                                            }
+                                        if (!window.Hls || !Hls.isSupported()) {
+                                            showStatus('Браузер не поддерживает HLS');
+                                            return;
+                                        }
 
-                                            const hls = new Hls({
-                                                debug: false,
-                                                enableWorker: true,
-                                                lowLatencyMode: false,  // Меняем на false для VOD
-                                                maxBufferLength: 60,     // Увеличиваем буфер
-                                                maxMaxBufferLength: 120, // Увеличиваем макс буфер
-                                                maxBufferSize: 120 * 1000 * 1000,
-                                                maxBufferHole: 0.5,
-                                                manifestLoadingTimeOut: 20000,
-                                                manifestLoadingMaxRetry: 6,
-                                                startLevel: -1,
-                                                abrEwmaDefaultEstimate: 500000,
-                                                liveSyncDurationCount: 3,
-                                                
-                                                // КЛЮЧЕВЫЕ ПАРАМЕТРЫ ДЛЯ ПЕРЕМОТКИ:
-                                                enableSeeking: true,
-                                                seekHoleThreshold: 0.3,
-                                                backBufferLength: 90,
-                                                maxFragLookUpTolerance: 0.5,
-                                            });
-                                            
-                                            hls.loadSource(hlsUrl);
-                                            hls.attachMedia(video);
-                                            
-                                            hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                                                console.log('HLS loaded - seeking available');
-                                                video.play().catch(e => {
-                                                    console.log('Autoplay prevented');
-                                                });
-                                            });
-                                            
-                                            hls.on(Hls.Events.ERROR, function(event, data) {
-                                                if (data.fatal) {
-                                                    switch(data.type) {
-                                                        case Hls.ErrorTypes.NETWORK_ERROR:
-                                                            hls.startLoad();
-                                                            break;
-                                                        case Hls.ErrorTypes.MEDIA_ERROR:
-                                                            hls.recoverMediaError();
-                                                            break;
-                                                        default:
-                                                            hls.destroy();
-                                                            break;
-                                                    }
+                                        hls = new Hls({
+                                            enableWorker: true,
+                                            lowLatencyMode: false,
+                                            maxBufferLength: 90,
+                                            maxMaxBufferLength: 180,
+                                            maxBufferSize: 180 * 1000 * 1000,
+                                            maxBufferHole: 0.3,
+                                            manifestLoadingTimeOut: 25000,
+                                            manifestLoadingMaxRetry: 8,
+                                            manifestLoadingRetryDelay: 500,
+                                            levelLoadingTimeOut: 25000,
+                                            levelLoadingMaxRetry: 6,
+                                            fragLoadingTimeOut: 30000,
+                                            fragLoadingMaxRetry: 6,
+                                            startLevel: -1,
+                                            abrEwmaDefaultEstimate: 800000,
+                                            abrBandWidthFactor: 0.9,
+                                            abrBandWidthUpFactor: 0.7,
+                                            backBufferLength: 120,
+                                            maxFragLookUpTolerance: 0.25,
+                                            startFragPrefetch: true,
+                                            testBandwidth: true,
+                                            progressive: true
+                                        });
+
+                                        hls.loadSource(hlsUrl);
+                                        hls.attachMedia(video);
+
+                                        hls.on(Hls.Events.MANIFEST_PARSED, function(e, data) {
+                                            showStatus('Загрузка...');
+                                            retryCount = 0;
+                                        });
+
+                                        hls.on(Hls.Events.FRAG_BUFFERED, function() {
+                                            hideLoader();
+                                            video.play().catch(function(){});
+                                        });
+
+                                        hls.on(Hls.Events.ERROR, function(e, data) {
+                                            if (!data.fatal) return;
+                                            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                                                if (retryCount < maxRetries) {
+                                                    retryCount++;
+                                                    showStatus('Переподключение (' + retryCount + '/' + maxRetries + ')...');
+                                                    showLoader();
+                                                    setTimeout(function() { hls.startLoad(); }, 1500);
+                                                } else {
+                                                    showStatus('Ошибка сети. Обновите страницу.');
                                                 }
-                                            });
-                                        }
+                                            } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                                                showStatus('Восстановление...');
+                                                hls.recoverMediaError();
+                                            } else {
+                                                showStatus('Ошибка воспроизведения');
+                                            }
+                                        });
 
-                                        initializeHLS();
-                                    })();
+                                        video.addEventListener('waiting', function() { showLoader(); showStatus('Буферизация...'); });
+                                        video.addEventListener('playing', hideLoader);
+                                        video.addEventListener('canplay', hideLoader);
+                                    }
+
+                                    function handleError() {
+                                        if (retryCount < maxRetries) {
+                                            retryCount++;
+                                            showStatus('Повтор (' + retryCount + ')...');
+                                            setTimeout(initPlayer, 2000);
+                                        } else {
+                                            showStatus('Не удалось загрузить');
+                                        }
+                                    }
+
+                                    initPlayer();
+                                })();
                                 </script>
                             </div>
 

@@ -307,6 +307,8 @@ function dtLocal($val) {
                     onclick="location.href='?tab=banners'">Баннеры</button>
             <button class="tab-btn <?php echo $active_tab === 'chat' ? 'active' : ''; ?>"
                     onclick="location.href='?tab=chat'">Чат</button>
+            <button class="tab-btn" style="background:linear-gradient(135deg,#0d1b3e,#1e3a8a);color:#d4af37;"
+                    onclick="location.href='ucl-final.php'">Финал ЛЧ</button>
         </div>
 
         <!-- ===================== MATCHES TAB ===================== -->

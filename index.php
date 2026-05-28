@@ -1,8 +1,4 @@
 <?php
-/**
- * Главная страница
- */
-
 define('APP_ACCESS', true);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/includes/Database.php';
@@ -14,7 +10,6 @@ Security::setSecurityHeaders();
 $db = Database::getInstance();
 $conn = $db->getConnection();
 
-// Активные баннеры
 $banners = [];
 try {
     $bannersQuery = $conn->query("SELECT * FROM banners WHERE is_active = 1 ORDER BY sort_order ASC, created_at DESC LIMIT 3");
@@ -23,7 +18,6 @@ try {
     error_log("Banners query error: " . $e->getMessage());
 }
 
-// Матчи
 $matches = [];
 try {
     $currentTime = date('Y-m-d H:i:s');
